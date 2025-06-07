@@ -4,8 +4,10 @@ import static java.util.function.Predicate.not;
 
 import jakarta.transaction.Transactional;
 import java.util.List;
+import kuke.board.comment.entity.ArticleCommentCount;
 import kuke.board.comment.entity.CommentPath;
 import kuke.board.comment.entity.CommentV2;
+import kuke.board.comment.repository.ArticleCommentCountRepository;
 import kuke.board.comment.repository.CommentRepositoryV2;
 import kuke.board.comment.service.request.CommentCreateRequestV2;
 import kuke.board.comment.service.response.CommentPageResponseV2;
@@ -20,6 +22,7 @@ public class CommentServiceV2 {
 
     private final Snowflake snowflake = new Snowflake();
     private final CommentRepositoryV2 commentRepository;
+    private final ArticleCommentCountRepository articleCommentCountRepository;
 
     @Transactional
     public CommentResponseV2 create(CommentCreateRequestV2 request) {
@@ -37,6 +40,14 @@ public class CommentServiceV2 {
                 )
             )
         );
+
+        int result = articleCommentCountRepository.increase(request.getArticleId());
+
+        if (result == 0) {
+            articleCommentCountRepository.save(
+                ArticleCommentCount.init(request.getArticleId(), 1L)
+            );
+        }
 
         return CommentResponseV2.from(comment);
     }
@@ -81,7 +92,7 @@ public class CommentServiceV2 {
 
     private void delete(CommentV2 comment) {
         commentRepository.delete(comment);
-
+        articleCommentCountRepository.decrease(comment.getArticleId());
         // 부모댓글의 상태가 delete라면 상위 댓글 재귀적으로 DB에서 삭제
         if (!comment.isRoot()) {
             commentRepository.findByPath(comment.getCommentPath().getParentPath())
@@ -111,4 +122,9 @@ public class CommentServiceV2 {
             .toList();
     }
 
+    public Long count(Long articleId) {
+        return articleCommentCountRepository.findById(articleId)
+            .map(ArticleCommentCount::getCommentCount)
+            .orElse(0L);
+    }
 }
